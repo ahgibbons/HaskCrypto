@@ -25,6 +25,7 @@ instance Encoded HexString where
   encode = encode16
   decode = decode16
 
+
 instance Encoded B64String where
   encode = encode64
   decode = decode64
@@ -65,20 +66,17 @@ encode64 s
 
 decode64 :: B64String -> Maybe PlainText
 decode64 (B64String b64s)
-  | BS.length b64s `rem` 4 == 0 = 
-      Just $ BS.pack . concat
-                     . map parseChunk
-                     . chunksOf 4 
-                     . map (fromJust . flip lookup b64ListMapFlip)
-                     . filter (/= _equal) 
-                     .  BS.unpack $ b64s
+  | BS.length b64s `rem` 4 == 0 = parseChunkList <$> b64toWords b64s
   | otherwise                   = Nothing
   where
+    parseChunkList = BS.pack . concatMap parseChunk . chunksOf 4
+    b64toWords = sequence . map (flip lookup b64ListMapFlip) 
+               . filter (/= _equal) . BS.unpack
     parseChunk [a,b,c,d] = [shiftL a 2 .|. shiftR b 4
-                          , shiftL (b .&. 0x0f) 4 .|. shiftR c 2
-                          , shiftL (c .&. 0x03) 6 .|. d]
+                       , shiftL (b .&. 0x0f) 4 .|. shiftR c 2
+                       , shiftL (c .&. 0x03) 6 .|. d]
     parseChunk [a,b,c]   = [shiftL a 2 .|. shiftR b 4
-                          , shiftL (b .&. 0x0f) 4 .|. shiftR c 2]
+                       , shiftL (b .&. 0x0f) 4 .|. shiftR c 2]
     parseChunk [a,b]     = [shiftL a 2 .|. shiftR b 4]
 
 

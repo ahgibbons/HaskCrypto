@@ -8,9 +8,11 @@ import qualified Data.ByteString.Char8 as BSC
 import Data.List.Split (chunksOf)
 import Data.Bits (Bits, (.|.),shiftR,shiftL,(.&.),shift)
 import Data.Word8
-import Data.List (unfoldr)
+import Data.List (unfoldr,dropWhile)
 import Data.Maybe (fromJust)
-
+import qualified Data.ByteString.Base64 as B64
+import qualified Test.QuickCheck as QC
+import Test.QuickCheck ((==>))
 
 type PlainText = BS.ByteString
 newtype HexString = HexString BS.ByteString deriving (Show,Eq)
@@ -30,7 +32,8 @@ instance Encoded B64String where
   encode = encode64
   decode = decode64
 
-
+equals_index :: Word8
+equals_index = 64
 
 encode16 :: PlainText -> HexString
 encode16 bs = HexString $ BS.concat $ map (encodeInt16 . fromIntegral) $ BS.unpack bs
@@ -48,21 +51,28 @@ decode16 (HexString hs)
     mSplitAt n bs = Just $ BS.splitAt n bs
 
 
-b64List = [_A.._Z]++[_a.._z]++[_0.._9]++[_plus,_slash]
+b64List = [_A.._Z]++[_a.._z]++[_0.._9]++[_plus,_slash,_equal]
 b64ListMap = zip [0..] b64List :: [(Word8, Word8)]
 b64ListMapFlip = zip b64List [0..] :: [(Word8, Word8)]
 
-encode64 :: PlainText -> B64String
-encode64 s
-    | r == 0    = B64String . encodeIntB64 $ joinBits 8 s'
-    | otherwise = let t = BS.unpack $ encodeIntB64 $ joinBits 8 (s' ++ replicate (3-r) 0) 
-                  in B64String . BS.pack $ take (length t - (3-r)) t ++ (replicate (3-r) _equal)
-  where
-    r = BS.length s `mod` 3
-    s' = BS.unpack s
-    encodeIntB64 :: Integer -> BS.ByteString
-    encodeIntB64 n = BS.pack $ map (fromJust . flip lookup b64ListMap . fromIntegral) (splitBits 6 n)
 
+encode64 :: PlainText -> B64String
+encode64 s = B64String . BS.pack
+           . map (fromJust . flip lookup b64ListMap . fromIntegral)
+           . concatMap parseChunk . chunksOf 3 . BS.unpack $ s
+  where
+    parseChunk [a,b,c] = [ shiftR a 2
+                         , shiftR b 4 .|. (shiftL a 4 .&. 0x30)
+                         , shiftR c 6 .|. (shiftL b 2 .&. 0x3c)
+                         , c .&. 0x3f]
+    parseChunk [a,b]   = [ shiftR a 2
+                         , shiftR b 4 .|. (shiftL a 4 .&. 0x30)
+                         , shiftL b 2 .&. 0x3c
+                         , equals_index]
+    parseChunk [a]     = [ shiftR a 2
+                         , shiftL a 4 .&. 0x30
+                         , equals_index
+                         , equals_index]
 
 decode64 :: B64String -> Maybe PlainText
 decode64 (B64String b64s)
@@ -80,17 +90,24 @@ decode64 (B64String b64s)
     parseChunk [a,b]     = [shiftL a 2 .|. shiftR b 4]
 
 
--- Split Number into bit chunks of size bs
-splitBits :: (Num a, Bits a) => Int -> a -> [a]
-splitBits bs number = reverse $ splitBits' bs number
-  where
-    splitBits' _ 0        = []
-    splitBits' bytesize n = 
-        fromIntegral (2^bytesize-1) .&. n : splitBits' bytesize (shiftR n bytesize)
 
--- Join list of numbers into one number in bit chunks of byteshift
-joinBits :: (Integral a, Num b, Bits b) => Int -> [a] -> b
-joinBits byteshift wlist = foldr (.|.) 0 shifted
+-- QuickCheck Tests
+
+instance QC.Arbitrary BS.ByteString where
+    arbitrary = BS.pack <$> QC.arbitrary
+
+
+prop_myb16 :: BS.ByteString -> Bool
+prop_myb16 bs = Just bs == (decode16 . encode $ bs)
+
+prop_myb64 :: BS.ByteString -> Bool
+prop_myb64 bs = Just bs == (decode64 . encode $ bs)
+
+prop_b64 :: BS.ByteString -> Bool
+prop_b64 bs = Right bs == (B64.decode . B64.encode $ bs)
+
+prop_b64_comp :: BS.ByteString -> Bool
+prop_b64_comp bs = b64str == B64.encode bs
   where
-    bitpos = [length wlist - 1,length wlist -2..0]
-    shifted = zipWith (\p n -> shift (fromIntegral n) (byteshift*p)) bitpos wlist
+    B64String b64str = encode64 bs
+

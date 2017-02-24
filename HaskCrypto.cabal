@@ -23,6 +23,8 @@ library
                      , bytestring
                      , word8
                      , split
+                     , base64-bytestring
+                     , QuickCheck
   default-language:    Haskell2010
 
 executable HaskCrypto-exe
@@ -34,6 +36,7 @@ executable HaskCrypto-exe
                      , word8
                      , bytestring
                      , split
+                     , base64-bytestring
   default-language:    Haskell2010
 
 test-suite HaskCrypto-test
@@ -42,6 +45,7 @@ test-suite HaskCrypto-test
   main-is:             Spec.hs
   build-depends:       base
                      , HaskCrypto
+                     , QuickCheck
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
